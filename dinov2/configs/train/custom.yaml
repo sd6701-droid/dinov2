@@ -1,0 +1,32 @@
+dino:
+  head_n_prototypes: 4096        # was 131072
+  head_bottleneck_dim: 256       # was 384
+
+ibot:
+  separate_head: true
+  head_n_prototypes: 4096        # was 131072
+
+train:
+  batch_size_per_gpu: 32
+  dataset_path: cc3m:split=TRAIN:root=/home/sd6701/datasets/fall2025_deeplearning/cc3m_96px
+  centering: sinkhorn_knopp
+
+student:
+  arch: vit_small                # was vit_large
+  patch_size: 14
+  drop_path_rate: 0.4
+  ffn_layer: swiglufused
+  block_chunks: 4
+
+teacher:
+  momentum_teacher: 0.994
+
+optim:
+  epochs: 100                    # or 500, up to you
+  weight_decay_end: 0.2
+  base_lr: 2.0e-04
+  warmup_epochs: 10              # shorter if fewer epochs
+  layerwise_decay: 1.0
+
+crops:
+  local_crops_size: 98           # you can keep this as is
