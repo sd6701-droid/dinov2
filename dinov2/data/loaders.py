@@ -10,7 +10,8 @@ from typing import Any, Callable, List, Optional, TypeVar
 import torch
 from torch.utils.data import Sampler
 
-from .datasets import ImageNet, ImageNet22k, cc3m
+from .datasets import ImageNet, ImageNet22k
+from .datasets.cc3m import CC3MDataset
 from .samplers import EpochSampler, InfiniteSampler, ShardedInfiniteSampler
 
 
@@ -59,7 +60,7 @@ def _parse_dataset_str(dataset_str: str):
     elif name == "ImageNet22k":
         class_ = ImageNet22k
     elif name == "cc3m":                    # <-- NEW
-        class_ = cc3m                
+        class_ = CC3MDataset                
     else:
         raise ValueError(f'Unsupported dataset "{name}"')
     

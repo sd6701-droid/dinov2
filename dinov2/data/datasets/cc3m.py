@@ -1,55 +1,90 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the Apache License, Version 2.0
+# found in the LICENSE file in the root directory of this source tree.
+
 import os
-from typing import Callable, Optional, Tuple, List
+import warnings
+from typing import Any, Callable, List, Optional, Tuple
 
-from PIL import Image
-from torchvision.datasets import VisionDataset
+import numpy as np
+
+from .extended import ExtendedVisionDataset
 
 
-class CC3MDataset(VisionDataset):
+class CC3MDataset(ExtendedVisionDataset):
     """
-    Minimal dataset for CC3M-style data.
+    Minimal CC3M dataset for DINOv2.
 
-    Expects *images only* under `root` (can be flat or nested in subfolders).
-    Labels are dummy (always 0) since DINOv2 is self-supervised and ignores them.
+    Assumes:
+      - `root` is a directory containing image files (possibly in subfolders).
+      - Labels are not used (self-supervised), so we return dummy targets.
     """
+
+    Labels = int
 
     def __init__(
         self,
+        *,
         root: str,
         split: str = "TRAIN",
-        extra: Optional[str] = None,   # accepted but ignored
+        transforms: Optional[Callable] = None,
         transform: Optional[Callable] = None,
         target_transform: Optional[Callable] = None,
     ) -> None:
-        super().__init__(root=root, transform=transform, target_transform=target_transform)
+        # ExtendedVisionDataset takes (root, transforms, transform, target_transform)
+        super().__init__(root, transforms, transform, target_transform)
 
+        self.split = split  # kept for API compatibility
+
+        # Collect all image files under root (recursively)
         exts = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
-        samples: List[str] = []
+        paths: List[str] = []
 
-        # Walk recursively under root and collect image files
-        for dirpath, _, filenames in os.walk(root):
+        for dirpath, _, filenames in os.walk(self.root):
             for fname in filenames:
                 if fname.lower().endswith(exts):
-                    samples.append(os.path.join(dirpath, fname))
+                    paths.append(os.path.join(dirpath, fname))
 
-        samples.sort()
-        if len(samples) == 0:
-            raise RuntimeError(f"No image files found under {root}")
+        paths.sort()
+        if len(paths) == 0:
+            raise RuntimeError(f"CC3MDataset: no image files found under root='{self.root}'")
 
-        self.samples = samples
+        self._paths: List[str] = paths
+
+    # --------- Required ExtendedVisionDataset interface ----------
 
     def __len__(self) -> int:
-        return len(self.samples)
+        return len(self._paths)
 
-    def __getitem__(self, index: int) -> Tuple[Image.Image, int]:
-        path = self.samples[index]
-        img = Image.open(path).convert("RGB")
-        target = 0  # dummy label
+    def get_image_data(self, index: int) -> bytes:
+        """
+        Return raw image bytes for sample `index`.
+        ExtendedVisionDataset will convert this to a PIL image internally.
+        """
+        path = self._paths[index]
+        with open(path, "rb") as f:
+            data = f.read()
+        return data
 
-        if self.transform is not None:
-            img = self.transform(img)
-        if self.target_transform is not None:
-            target = self.target_transform(target)
+    def get_target(self, index: int) -> Any:
+        """
+        DINOv2 training is self-supervised, so we don't actually use labels.
+        We just return a dummy target.
+        """
+        return 0
 
-        # DINOv2’s collate_fn works fine with (image, label) tuples
-        return img, target
+    def get_targets(self) -> np.ndarray:
+        """
+        Optional helper to return all targets as a numpy array.
+        Here it's just zeros.
+        """
+        return np.zeros(len(self._paths), dtype=np.int64)
+
+    def __getitem__(self, index: int) -> Tuple[Any, Any]:
+        """
+        Wrap parent __getitem__, but silence potential PIL warnings.
+        """
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return super().__getitem__(index)
