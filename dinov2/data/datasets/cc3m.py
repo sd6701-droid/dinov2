@@ -83,8 +83,34 @@ class CC3MDataset(ExtendedVisionDataset):
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         """
-        Wrap parent __getitem__, but silence potential PIL warnings.
+        Wrap parent __getitem__, but if a particular image is unreadable
+        (PIL.UnidentifiedImageError → RuntimeError in ExtendedVisionDataset),
+        skip it and try a nearby sample instead.
+
+        This prevents a single corrupt file from crashing training.
         """
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            return super().__getitem__(index)
+        num_trials = 0
+        max_trials = 5
+        cur_index = index
+
+        while num_trials < max_trials:
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    return super().__getitem__(cur_index)
+            except RuntimeError as e:
+                msg = str(e)
+                # ExtendedVisionDataset raises this when PIL can't read the image
+                if "can not read image for sample" not in msg:
+                    # some other unexpected error → propagate
+                    raise
+
+                # corrupt/unreadable image: move to next index
+                num_trials += 1
+                cur_index = (cur_index + 1) % len(self._paths)
+
+        # too many consecutive bad samples → give a clear error
+        raise RuntimeError(
+            f"CC3MDataset: too many unreadable images around index {index}. "
+            "Please check your CC3M folder for corrupt files."
+        )
