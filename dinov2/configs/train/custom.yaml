@@ -29,4 +29,8 @@ optim:
   layerwise_decay: 1.0
 
 crops:
-  local_crops_size: 98           # you can keep this as is
+  global_crops_size: 224     # was 98 or something smaller → must be 224 for ViT small
+  local_crops_size: 112      # must be divisible by patch size 14 (112 = 8×14)
+  local_crops_scale: [0.1, 0.5]
+  global_crops_scale: [0.4, 1.0]
+  local_crops_number: 6
