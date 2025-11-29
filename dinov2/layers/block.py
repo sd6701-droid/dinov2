@@ -217,12 +217,40 @@ def add_residual(x, brange, residual, residual_scale_factor, scaling_vector=None
 attn_bias_cache: Dict[Tuple, Any] = {}
 
 
+# def get_attn_bias_and_cat(x_list, branges=None):
+#     """
+#     this will perform the index select, cat the tensors, and provide the attn_bias from cache
+#     """
+#     batch_sizes = [b.shape[0] for b in branges] if branges is not None else [x.shape[0] for x in x_list]
+#     all_shapes = tuple((b, x.shape[1]) for b, x in zip(batch_sizes, x_list))
+#     if all_shapes not in attn_bias_cache.keys():
+#         seqlens = []
+#         for b, x in zip(batch_sizes, x_list):
+#             for _ in range(b):
+#                 seqlens.append(x.shape[1])
+#         attn_bias = fmha.BlockDiagonalMask.from_seqlens(seqlens)
+#         attn_bias._batch_sizes = batch_sizes
+#         attn_bias_cache[all_shapes] = attn_bias
+
+#     if branges is not None:
+#         cat_tensors = index_select_cat([x.flatten(1) for x in x_list], branges).view(1, -1, x_list[0].shape[-1])
+#     else:
+#         tensors_bs1 = tuple(x.reshape([1, -1, *x.shape[2:]]) for x in x_list)
+#         cat_tensors = torch.cat(tensors_bs1, dim=1)
+
+#     return attn_bias_cache[all_shapes], cat_tensors
+
 def get_attn_bias_and_cat(x_list, branges=None):
     """
-    this will perform the index select, cat the tensors, and provide the attn_bias from cache
+    This will perform the index select, concatenate the tensors, and provide
+    the attention bias from cache. We avoid xformers.index_select_cat because
+    it can assert on certain tensor shapes.
     """
+    # batch sizes for each tensor
     batch_sizes = [b.shape[0] for b in branges] if branges is not None else [x.shape[0] for x in x_list]
+    # cache key: (batch_size, seq_len) for each tensor
     all_shapes = tuple((b, x.shape[1]) for b, x in zip(batch_sizes, x_list))
+
     if all_shapes not in attn_bias_cache.keys():
         seqlens = []
         for b, x in zip(batch_sizes, x_list):
@@ -232,14 +260,22 @@ def get_attn_bias_and_cat(x_list, branges=None):
         attn_bias._batch_sizes = batch_sizes
         attn_bias_cache[all_shapes] = attn_bias
 
+    # Build the concatenated tensor as (1, total_tokens, dim)
     if branges is not None:
-        cat_tensors = index_select_cat([x.flatten(1) for x in x_list], branges).view(1, -1, x_list[0].shape[-1])
+        # branges: list of index tensors, one per x in x_list
+        tensors_bs1 = []
+        for x, brange in zip(x_list, branges):
+            # x: (B, N, D), brange: (B_subset,)
+            x_sel = x[brange]                 # (B_subset, N, D)
+            x_sel_flat = x_sel.reshape(1, -1, x_sel.shape[-1])  # (1, B_subset * N, D)
+            tensors_bs1.append(x_sel_flat)
+        cat_tensors = torch.cat(tensors_bs1, dim=1)  # (1, total_tokens, D)
     else:
+        # original non-sampling path
         tensors_bs1 = tuple(x.reshape([1, -1, *x.shape[2:]]) for x in x_list)
         cat_tensors = torch.cat(tensors_bs1, dim=1)
 
     return attn_bias_cache[all_shapes], cat_tensors
-
 
 def drop_add_residual_stochastic_depth_list(
     x_list: List[Tensor],
