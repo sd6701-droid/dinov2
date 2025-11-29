@@ -16,7 +16,7 @@ student:
   patch_size: 14
   drop_path_rate: 0.4
   ffn_layer: swiglufused
-  block_chunks: 4
+  block_chunks: 1           #updated based on gpt
 
 teacher:
   momentum_teacher: 0.994
