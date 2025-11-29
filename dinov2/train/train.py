@@ -173,13 +173,26 @@ def do_train(cfg, model, resume=False):
         max_num_patches=0.5 * img_size // patch_size * img_size // patch_size,
     )
 
-    data_transform = DataAugmentationDINO(
+    base_transform = DataAugmentationDINO(
         cfg.crops.global_crops_scale,
         cfg.crops.local_crops_scale,
         cfg.crops.local_crops_number,
-        global_crops_size=cfg.crops.global_crops_size,
-        local_crops_size=cfg.crops.local_crops_size,
+        global_crops_size=cfg.crops.global_crops_size,   # 224
+        local_crops_size=cfg.crops.local_crops_size,     # 112
     )
+
+    # Wrapper to first resize raw CC3M image (96x96) to 224x224
+    def data_transform(img):
+        # img should be a PIL.Image from CC3MDataset
+        if not isinstance(img, Image.Image):
+            # just in case, convert tensor/array to PIL
+            img = Image.fromarray(np.array(img))
+
+        img = img.resize(
+            (cfg.crops.global_crops_size, cfg.crops.global_crops_size),
+            Image.BICUBIC,
+        )
+        return base_transform(img)
 
     collate_fn = partial(
         collate_data_and_cast,
