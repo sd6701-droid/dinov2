@@ -202,17 +202,60 @@ def get_branges_scales(x, sample_drop_ratio=0.0):
     return brange, residual_scale_factor
 
 
-def add_residual(x, brange, residual, residual_scale_factor, scaling_vector=None):
-    if scaling_vector is None:
-        x_flat = x.flatten(1)
-        residual = residual.flatten(1)
-        x_plus_residual = torch.index_add(x_flat, 0, brange, residual.to(dtype=x.dtype), alpha=residual_scale_factor)
-    else:
-        x_plus_residual = scaled_index_add(
-            x, brange, residual.to(dtype=x.dtype), scaling=scaling_vector, alpha=residual_scale_factor
-        )
-    return x_plus_residual
+# def add_residual(x, brange, residual, residual_scale_factor, scaling_vector=None):
+#     if scaling_vector is None:
+#         x_flat = x.flatten(1)
+#         residual = residual.flatten(1)
+#         x_plus_residual = torch.index_add(x_flat, 0, brange, residual.to(dtype=x.dtype), alpha=residual_scale_factor)
+#     else:
+#         x_plus_residual = scaled_index_add(
+#             x, brange, residual.to(dtype=x.dtype), scaling=scaling_vector, alpha=residual_scale_factor
+#         )
+#     return x_plus_residual
 
+
+def add_residual(x, brange, residual, residual_scale_factor, scaling_vector=None):
+    """
+    Add residual into x at rows in `brange`.
+
+    x:        (B, N, D)
+    residual: (B_subset, N, D)
+    brange:   (B_subset,)
+
+    If scaling_vector is provided (LayerScale gamma), we apply it manually
+    instead of using xformers.scaled_index_add.
+    """
+    if scaling_vector is None:
+        # Original behavior: flatten over (N, D) and use torch.index_add
+        x_flat = x.flatten(1)          # (B, N*D)
+        residual_flat = residual.flatten(1)  # (B_subset, N*D)
+        x_plus_residual_flat = torch.index_add(
+            x_flat,
+            0,
+            brange,
+            residual_flat.to(dtype=x.dtype),
+            alpha=residual_scale_factor,
+        )
+        return x_plus_residual_flat
+
+    # ---- PyTorch-only replacement for xformers.scaled_index_add ----
+    # scaling_vector is typically shape (D,) or (1, D)
+    if scaling_vector.dim() == 1:
+        scale = scaling_vector.view(1, 1, -1)      # (1, 1, D)
+    elif scaling_vector.dim() == 2:
+        scale = scaling_vector.view(1, 1, -1)      # (1, 1, D)
+    else:
+        # assume already broadcastable to (1, 1, D)
+        scale = scaling_vector
+
+    # residual: (B_subset, N, D)
+    scaled_res = residual.to(dtype=x.dtype) * scale   # (B_subset, N, D)
+    scaled_res = scaled_res * residual_scale_factor   # apply alpha
+
+    # write back only the subset of batch indices
+    x_new = x.clone()
+    x_new[brange] = x_new[brange] + scaled_res
+    return x_new
 
 attn_bias_cache: Dict[Tuple, Any] = {}
 
