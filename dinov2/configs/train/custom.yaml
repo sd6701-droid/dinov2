@@ -13,7 +13,7 @@ train:
 
 student:
   arch: vit_small                # was vit_large
-  patch_size: 14
+  patch_size: 16
   drop_path_rate: 0.4
   ffn_layer: swiglufused
   block_chunks: 1           #updated based on gpt
