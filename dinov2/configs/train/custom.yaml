@@ -30,7 +30,7 @@ optim:
 
 crops:
   global_crops_size: 96      # Matches input image size
-  local_crops_size: 42       # 3 * 14 = 42 (must be divisible by patch size 14)
+  local_crops_size: 48       # 3 * 14 = 42 (must be divisible by patch size 14)
   local_crops_scale: [0.1, 0.5]
   global_crops_scale: [0.4, 1.0]
   local_crops_number: 6
