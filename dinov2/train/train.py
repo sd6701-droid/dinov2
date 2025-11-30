@@ -8,6 +8,7 @@ import logging
 import math
 import os
 from functools import partial
+import wandb
 
 from fvcore.common.checkpoint import PeriodicCheckpointer
 import torch
@@ -55,6 +56,11 @@ For python-based LazyConfig, use "path.key=value".
         type=str,
         help="Output directory to save logs and checkpoints",
     )
+    parser.add_argument("--enable-wandb", action="store_true", help="Enable WandB logging")
+    parser.add_argument("--wandb-project", type=str, default="dinov2", help="WandB project name")
+    parser.add_argument("--wandb-entity", type=str, default=None, help="WandB entity name")
+    parser.add_argument("--wandb-name", type=str, default=None, help="WandB run name")
+    parser.add_argument("--wandb-api-key", type=str, default=None, help="WandB API key")
 
     return parser
 
@@ -132,10 +138,21 @@ def do_test(cfg, model, iteration):
         torch.save({"teacher": new_state_dict}, teacher_ckp_path)
 
 
-def do_train(cfg, model, resume=False):
+def do_train(cfg, model, args, resume=False):
     model.train()
     inputs_dtype = torch.half
     fp16_scaler = model.fp16_scaler  # for mixed precision training
+
+    if args.enable_wandb and distributed.is_main_process():
+        if args.wandb_api_key:
+            wandb.login(key=args.wandb_api_key)
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=args.wandb_name,
+            config=cfg,
+            dir=args.output_dir,
+        )
 
     # setup optimizer
 
@@ -303,6 +320,18 @@ def do_train(cfg, model, resume=False):
         metric_logger.update(current_batch_size=current_batch_size)
         metric_logger.update(total_loss=losses_reduced, **loss_dict_reduced)
 
+        if args.enable_wandb and distributed.is_main_process():
+            wandb.log({
+                "train/lr": lr,
+                "train/wd": wd,
+                "train/mom": mom,
+                "train/last_layer_lr": last_layer_lr,
+                "train/current_batch_size": current_batch_size,
+                "train/total_loss": losses_reduced,
+                **{f"train/{k}": v for k, v in loss_dict_reduced.items()},
+                "train/iteration": iteration,
+            })
+
         # checkpointing and testing
 
         if cfg.evaluation.eval_period_iterations > 0 and (iteration + 1) % cfg.evaluation.eval_period_iterations == 0:
@@ -331,7 +360,7 @@ def main(args):
         )
         return do_test(cfg, model, f"manual_{iteration}")
 
-    do_train(cfg, model, resume=not args.no_resume)
+    do_train(cfg, model, args, resume=not args.no_resume)
 
 
 if __name__ == "__main__":
