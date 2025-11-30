@@ -59,7 +59,12 @@ For python-based LazyConfig, use "path.key=value".
     )
     parser.add_argument("--enable-wandb", action="store_true", help="Enable WandB logging")
     parser.add_argument("--wandb-project", type=str, default="dinov2", help="WandB project name")
-    parser.add_argument("--wandb-entity", type=str, default="dinov2-traning-1", help="WandB entity name")
+    parser.add_argument(
+        "--wandb-entity",
+        type=str,
+        default="sd6701-new-york-university",   # <- was "dinov2-traning-1"
+        help="WandB entity (team or username). If None, use your default account.",
+    )
     parser.add_argument("--wandb-name", type=str, default="dinov2-traning-sam", help="WandB run name")
     parser.add_argument("--wandb-api-key", type=str, default="14abcf8b33d9a7f066dd1988891a00fec55f4030", help="WandB API key")
 
