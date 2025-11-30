@@ -212,10 +212,6 @@ def do_train(cfg, model, args, resume=False):
             # just in case, convert tensor/array to PIL
             img = Image.fromarray(np.array(img))
 
-        img = img.resize(
-            (cfg.crops.global_crops_size, cfg.crops.global_crops_size),
-            Image.BICUBIC,
-        )
         return base_transform(img)
 
     collate_fn = partial(
