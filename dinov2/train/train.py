@@ -9,6 +9,7 @@ import math
 import os
 from functools import partial
 import wandb
+from omegaconf import OmegaConf
 
 from fvcore.common.checkpoint import PeriodicCheckpointer
 import torch
@@ -150,7 +151,7 @@ def do_train(cfg, model, args, resume=False):
             project=args.wandb_project,
             entity=args.wandb_entity,
             name=args.wandb_name,
-            config=cfg,
+            config=OmegaConf.to_container(cfg, resolve=True),
             dir=args.output_dir,
         )
 
