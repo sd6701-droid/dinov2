@@ -16,7 +16,7 @@ module load cuda/12.1
 source /gpfs/data/shenlab/aj4718/miniconda3/etc/profile.d/conda.sh
 conda activate dinov2
 
-export WANDB_API_KEY='f06a145e49c4c141b217ea006d4d9a8a0c9f390b'
+export WANDB_API_KEY=''
 export PYTHONPATH=$PYTHONPATH:.
 
 # Print environment info
