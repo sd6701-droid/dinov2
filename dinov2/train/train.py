@@ -8,6 +8,8 @@ import logging
 import math
 import os
 from functools import partial
+import wandb
+from omegaconf import OmegaConf
 
 from fvcore.common.checkpoint import PeriodicCheckpointer
 import torch
@@ -21,6 +23,8 @@ from dinov2.utils.config import setup
 from dinov2.utils.utils import CosineScheduler
 
 from dinov2.train.ssl_meta_arch import SSLMetaArch
+from PIL import Image   # <-- add this line
+from dinov2.train.ssl_meta_arch_pyramid import PyramidSSLMetaArch
 
 
 torch.backends.cuda.matmul.allow_tf32 = True  # PyTorch 1.12 sets this to False by default
@@ -54,6 +58,16 @@ For python-based LazyConfig, use "path.key=value".
         type=str,
         help="Output directory to save logs and checkpoints",
     )
+    parser.add_argument("--enable-wandb", action="store_true", help="Enable WandB logging")
+    parser.add_argument("--wandb-project", type=str, default="dinov2", help="WandB project name")
+    parser.add_argument(
+        "--wandb-entity",
+        type=str,
+        default="sd6701-new-york-university",   # <- was "dinov2-traning-1"
+        help="WandB entity (team or username). If None, use your default account.",
+    )
+    parser.add_argument("--wandb-name", type=str, default="dinov2-traning-sam", help="WandB run name")
+    parser.add_argument("--wandb-api-key", type=str, default="14abcf8b33d9a7f066dd1988891a00fec55f4030", help="WandB API key")
 
     return parser
 
@@ -131,10 +145,21 @@ def do_test(cfg, model, iteration):
         torch.save({"teacher": new_state_dict}, teacher_ckp_path)
 
 
-def do_train(cfg, model, resume=False):
+def do_train(cfg, model, args, resume=False):
     model.train()
     inputs_dtype = torch.half
     fp16_scaler = model.fp16_scaler  # for mixed precision training
+
+    if args.enable_wandb and distributed.is_main_process():
+        if args.wandb_api_key:
+            wandb.login(key=args.wandb_api_key)
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=args.wandb_name,
+            config=OmegaConf.to_container(cfg, resolve=True),
+            dir=args.output_dir,
+        )
 
     # setup optimizer
 
@@ -161,6 +186,13 @@ def do_train(cfg, model, resume=False):
         max_iter=max_iter,
         max_to_keep=3,
     )
+    # periodic_checkpointer = PeriodicCheckpointer(
+    #     checkpointer,
+    #     # save once per "epoch"
+    #     period=OFFICIAL_EPOCH_LENGTH,
+    #     max_iter=max_iter,
+    #     max_to_keep=3,
+    # )
 
     # setup data preprocessing
 
@@ -172,13 +204,22 @@ def do_train(cfg, model, resume=False):
         max_num_patches=0.5 * img_size // patch_size * img_size // patch_size,
     )
 
-    data_transform = DataAugmentationDINO(
+    base_transform = DataAugmentationDINO(
         cfg.crops.global_crops_scale,
         cfg.crops.local_crops_scale,
         cfg.crops.local_crops_number,
-        global_crops_size=cfg.crops.global_crops_size,
-        local_crops_size=cfg.crops.local_crops_size,
+        global_crops_size=cfg.crops.global_crops_size,   # 224
+        local_crops_size=cfg.crops.local_crops_size,     # 112
     )
+
+    # Wrapper to first resize raw CC3M image (96x96) to 224x224
+    def data_transform(img):
+        # img should be a PIL.Image from CC3MDataset
+        if not isinstance(img, Image.Image):
+            # just in case, convert tensor/array to PIL
+            img = Image.fromarray(np.array(img))
+
+        return base_transform(img)
 
     collate_fn = partial(
         collate_data_and_cast,
@@ -282,6 +323,18 @@ def do_train(cfg, model, resume=False):
         metric_logger.update(current_batch_size=current_batch_size)
         metric_logger.update(total_loss=losses_reduced, **loss_dict_reduced)
 
+        if args.enable_wandb and distributed.is_main_process():
+            wandb.log({
+                "train/lr": lr,
+                "train/wd": wd,
+                "train/mom": mom,
+                "train/last_layer_lr": last_layer_lr,
+                "train/current_batch_size": current_batch_size,
+                "train/total_loss": losses_reduced,
+                **{f"train/{k}": v for k, v in loss_dict_reduced.items()},
+                "train/iteration": iteration,
+            })
+
         # checkpointing and testing
 
         if cfg.evaluation.eval_period_iterations > 0 and (iteration + 1) % cfg.evaluation.eval_period_iterations == 0:
@@ -297,7 +350,7 @@ def do_train(cfg, model, resume=False):
 def main(args):
     cfg = setup(args)
 
-    model = SSLMetaArch(cfg).to(torch.device("cuda"))
+    model = PyramidSSLMetaArch(cfg).to(torch.device("cuda"))
     model.prepare_for_distributed_training()
 
     logger.info("Model:\n{}".format(model))
@@ -310,7 +363,7 @@ def main(args):
         )
         return do_test(cfg, model, f"manual_{iteration}")
 
-    do_train(cfg, model, resume=not args.no_resume)
+    do_train(cfg, model, args, resume=not args.no_resume)
 
 
 if __name__ == "__main__":
