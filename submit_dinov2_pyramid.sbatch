@@ -6,7 +6,7 @@
 #SBATCH --mem=160Gb
 #SBATCH --time=20-00:00:00
 #SBATCH --job-name=dinov2_pyramid
-#SBATCH --output=/gpfs/data/shenlab/aj4718/dinov2/logs/slurm-%j.out
+
 
 # Load modules
 module load python/3.10.10
