@@ -25,7 +25,7 @@ train:
   #   :extra=<video folder>   if the file lists relative paths / ids (default: the file's folder)
   #   :frames=<K>             to sample K frames per video per epoch (default 1)
   dataset_path: >-
-    VideoFiles:root=/gpfs/scratch/sd6701/personal/salt/datasets/ssv2/labels/train.json
+    VideoFiles:root=/gpfs/scratch/sd6701/personal/salt/datasets/ssv2/labels/train.json:extra=/gpfs/scratch/sd6701/personal/salt/datasets/ssv2/20bn-something-something-v2
     +VideoFiles:root=/gpfs/scratch/sd6701/personal/salt/datasets/k400/train_labeled_nonempty.csv
     +VideoFiles:root=/gpfs/scratch/sd6701/personal/salt/datasets/diving48/train_v2_labeled.csv:frames=4
   OFFICIAL_EPOCH_LENGTH: -1    # -1 = one epoch is one pass over all samples (computed at startup)
