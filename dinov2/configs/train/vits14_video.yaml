@@ -1,0 +1,64 @@
+# DINOv2 ViT-S/14 pretraining on frames from SSv2 + Kinetics-400 + Diving48, 50 epochs.
+#
+# Videos are read straight from the SALT/V-JEPA annotation files; each sample is one random
+# frame of one video, decoded on the fly (needs `pip install decord`, or `av` as a fallback).
+# 1) Sanity-check the annotation files once:
+#    PYTHONPATH=. python scripts/check_video_datasets.py --config dinov2/configs/train/vits14_video.yaml
+# 2) Launch, e.g. on 4 GPUs of one node:
+#    PYTHONPATH=. torchrun --nproc_per_node=4 dinov2/train/train.py \
+#      --config-file dinov2/configs/train/vits14_video.yaml --output-dir <out> --enable-wandb
+#
+# Anything not set here comes from dinov2/configs/ssl_default_config.yaml.
+
+dino:
+  head_n_prototypes: 65536
+  head_bottleneck_dim: 256
+  koleo_loss_weight: 0.1
+
+ibot:
+  separate_head: true
+  head_n_prototypes: 65536
+
+train:
+  batch_size_per_gpu: 64       # lower to 32 if you run out of GPU memory
+  # "+" joins datasets. Each part is VideoFiles:root=<annotation file>, optionally with
+  #   :extra=<video folder>   if the file lists relative paths / ids (default: the file's folder)
+  #   :frames=<K>             to sample K frames per video per epoch (default 1)
+  dataset_path: >-
+    VideoFiles:root=/gpfs/scratch/sd6701/personal/salt/datasets/ssv2/labels/train.json
+    +VideoFiles:root=/gpfs/scratch/sd6701/personal/salt/datasets/k400/train_labeled_nonempty.csv
+    +VideoFiles:root=/gpfs/scratch/sd6701/personal/salt/datasets/diving48/train_v2_labeled.csv:frames=4
+  OFFICIAL_EPOCH_LENGTH: -1    # -1 = one epoch is one pass over all samples (computed at startup)
+  num_workers: 12             # video decoding is CPU-heavy; raise if GPUs wait on data
+  centering: sinkhorn_knopp
+
+student:
+  arch: vit_small
+  patch_size: 14
+  drop_path_rate: 0.1          # small model: less stochastic depth than ViT-L/g (0.4)
+  ffn_layer: mlp               # official ViT-S/14 uses a plain MLP; swiglufused is for ViT-g
+  block_chunks: 0
+  num_register_tokens: 0       # set to 4 for a "with registers" model
+
+teacher:
+  momentum_teacher: 0.994
+  warmup_teacher_temp_epochs: 10   # default 30 is too long for a 50-epoch run
+
+optim:
+  epochs: 50
+  warmup_epochs: 5
+  base_lr: 1.0e-03             # for a global batch of 1024; scaled by sqrt(batch/1024)
+  weight_decay: 0.04
+  weight_decay_end: 0.2
+  layerwise_decay: 0.9
+  freeze_last_layer_epochs: 1
+
+crops:
+  global_crops_size: 224       # 16 x 14
+  local_crops_size: 98         # 7 x 14
+  global_crops_scale: [0.32, 1.0]
+  local_crops_scale: [0.05, 0.32]
+  local_crops_number: 8
+
+evaluation:
+  eval_period_iterations: 5000 # every N iterations, save teacher weights to <out>/eval/<iter>/teacher_checkpoint.pth

@@ -24,6 +24,7 @@ from dinov2.utils.utils import CosineScheduler
 
 from dinov2.train.ssl_meta_arch import SSLMetaArch
 from PIL import Image   # <-- add this line
+import numpy as np
 
 
 torch.backends.cuda.matmul.allow_tf32 = True  # PyTorch 1.12 sets this to False by default
@@ -346,8 +347,29 @@ def do_train(cfg, model, args, resume=False):
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
+def resolve_epoch_length(cfg):
+    """
+    If train.OFFICIAL_EPOCH_LENGTH <= 0, set it to one real pass over the dataset:
+    num_samples // (batch_size_per_gpu * world_size). Otherwise keep the configured value.
+    Must run before the schedulers are built, since they are sized in iterations.
+    """
+    if cfg.train.OFFICIAL_EPOCH_LENGTH > 0:
+        return cfg
+    dataset = make_dataset(dataset_str=cfg.train.dataset_path, transform=None, target_transform=None)
+    global_batch = cfg.train.batch_size_per_gpu * distributed.get_global_size()
+    epoch_length = max(1, len(dataset) // global_batch)
+    cfg.train.OFFICIAL_EPOCH_LENGTH = epoch_length
+    logger.info(
+        f"OFFICIAL_EPOCH_LENGTH auto-set to {epoch_length:,d} iterations "
+        f"({len(dataset):,d} samples / global batch {global_batch}); "
+        f"total iterations = {cfg.optim.epochs * epoch_length:,d}"
+    )
+    return cfg
+
+
 def main(args):
     cfg = setup(args)
+    cfg = resolve_epoch_length(cfg)
 
     model = SSLMetaArch(cfg).to(torch.device("cuda"))
     model.prepare_for_distributed_training()

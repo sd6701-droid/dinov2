@@ -12,6 +12,8 @@ from torch.utils.data import Sampler
 
 from .datasets import ImageNet, ImageNet22k
 from .datasets.cc3m import CC3MDataset
+from .datasets.video_frames import VideoFramesDataset
+from .datasets.video_files import VideoFilesDataset
 from .samplers import EpochSampler, InfiniteSampler, ShardedInfiniteSampler
 
 
@@ -49,8 +51,8 @@ def _parse_dataset_str(dataset_str: str):
     kwargs = {}
 
     for token in tokens[1:]:
-        key, value = token.split("=")
-        assert key in ("root", "extra", "split")
+        key, value = token.split("=", 1)
+        assert key in ("root", "extra", "split", "frames")
         kwargs[key] = value
 
     if name == "ImageNet":
@@ -61,6 +63,10 @@ def _parse_dataset_str(dataset_str: str):
         class_ = ImageNet22k
     elif name == "cc3m":                    # <-- NEW
         class_ = CC3MDataset                
+    elif name == "VideoFrames":
+        class_ = VideoFramesDataset
+    elif name == "VideoFiles":
+        class_ = VideoFilesDataset
     else:
         raise ValueError(f'Unsupported dataset "{name}"')
     
@@ -87,8 +93,20 @@ def make_dataset(
     """
     logger.info(f'using dataset: "{dataset_str}"')
 
-    class_, kwargs = _parse_dataset_str(dataset_str)
-    dataset = class_(transform=transform, target_transform=target_transform, **kwargs)
+    # Several datasets can be combined with "+", e.g.
+    #   "VideoFrames:root=/data/ssv2+VideoFrames:root=/data/k400"
+    sub_strs = [s.strip() for s in dataset_str.split("+") if s.strip()]
+    if len(sub_strs) > 1:
+        sub_datasets = []
+        for sub_str in sub_strs:
+            class_, kwargs = _parse_dataset_str(sub_str)
+            sub_dataset = class_(transform=transform, target_transform=target_transform, **kwargs)
+            logger.info(f'  "{sub_str}": {len(sub_dataset):,d} samples')
+            sub_datasets.append(sub_dataset)
+        dataset = torch.utils.data.ConcatDataset(sub_datasets)
+    else:
+        class_, kwargs = _parse_dataset_str(dataset_str)
+        dataset = class_(transform=transform, target_transform=target_transform, **kwargs)
 
     logger.info(f"# of dataset samples: {len(dataset):,d}")
 
