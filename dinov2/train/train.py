@@ -63,7 +63,7 @@ For python-based LazyConfig, use "path.key=value".
     parser.add_argument(
         "--wandb-entity",
         type=str,
-        default="sd6701-new-york-university",   # <- was "dinov2-traning-1"
+        default=os.environ.get("WANDB_ENTITY"),  # None -> your default wandb account
         help="WandB entity (team or username). If None, use your default account.",
     )
     parser.add_argument("--wandb-name", type=str, default="dinov2-traning-sam", help="WandB run name")
