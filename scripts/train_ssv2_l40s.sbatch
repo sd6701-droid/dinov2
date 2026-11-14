@@ -9,6 +9,9 @@
 # training resumes from the last checkpoint in OUT_DIR.
 
 #SBATCH --job-name=dinov2-ssv2
+# L40S partitions; Slurm starts the job on whichever has a free GPU first.
+# Override at submit time if needed: sbatch -p gl40s_long scripts/train_ssv2_l40s.sbatch
+#SBATCH --partition=gl40s_short,gl40s_long
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
